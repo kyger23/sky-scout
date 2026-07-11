@@ -4,7 +4,9 @@
 
 Run the service locally at `http://localhost:8000`; use the deployed Render URL in production. FastAPI exposes interactive Swagger documentation at `/docs` and an OpenAPI document at `/openapi.json`.
 
-All prices are returned in EUR. Sky Scout uses the fixed conversion `1 USD = 0.88 EUR`; it does not request live exchange rates.
+All prices are returned in EUR. Sky Scout uses the fixed conversion 1 USD = 0.88 EUR; it does not request live exchange rates.
+
+Live flight results come from SearchAPI's Google Flights engine. Set the SEARCHAPI_API_KEY environment variable locally and in Render; never put the key in requests from the frontend or commit it to Git.
 
 ## `GET /health`
 
@@ -37,7 +39,7 @@ Searches one-way flights for the requested departure date and up to seven follow
 
 | Field | Meaning |
 | --- | --- |
-| `source` | `live` for Google Flights data, `cache` for a fresh in-memory result, or `demo_fallback` when the live source is unavailable. |
+| `source` | `live` for Google Flights data supplied by SearchAPI, `cache` for a fresh in-memory result, or `demo_fallback` when SearchAPI is unavailable. |
 | `budget_status` | `not_applied` when no budget was provided, `matched` when returned flights meet it, or `exceeded` when only the cheapest over-budget result is returned. |
 | `itineraries` | Price-ranked flight options. Each price is in EUR. |
 | `message` | Optional explanation, including live-source fallback or an over-budget notice. |

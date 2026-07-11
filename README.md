@@ -1,0 +1,2 @@
+# sky-scout
+ai hackathon

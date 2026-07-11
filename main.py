@@ -12,5 +12,5 @@ def health(): return {"status": "ok"}
 
 @app.post("/search", response_model=SearchResponse)
 def search(request: SearchRequest):
-    source, itineraries, message = search_service.search(request)
-    return SearchResponse(origin=request.origin, destination=request.destination, departure_date=request.departure_date, flex_days=request.flex_days, source=source, itineraries=itineraries, message=message)
+    source, itineraries, message, budget_status = search_service.search(request)
+    return SearchResponse(origin=request.origin, destination=request.destination, departure_date=request.departure_date, flex_days=request.flex_days, max_budget_eur=request.max_budget_eur, budget_status=budget_status, source=source, itineraries=itineraries, message=message)

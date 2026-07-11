@@ -5,6 +5,8 @@ from threading import RLock
 from typing import Protocol
 from schemas import FlightItinerary, SearchRequest
 
+USD_TO_EUR = 0.88
+
 class FlightSourceError(RuntimeError): pass
 class FlightScraper(Protocol):
     def search(self, origin: str, destination: str, departure_date: date, passengers: int) -> list[FlightItinerary]: ...
@@ -29,9 +31,9 @@ class GoogleFlightsScraper:
     @staticmethod
     def _normalize(flight, departure_date):
         def get(name, default=None): return getattr(flight, name, default)
-        price = float(str(get("price", 0)).replace("$", "").replace(",", ""))
-        return FlightItinerary(departure_date=departure_date, price=price,
-            currency=get("currency", "USD"), airline=get("name", get("airline", "Unknown airline")),
+        price_usd = float(str(get("price", 0)).replace("$", "").replace(",", ""))
+        return FlightItinerary(departure_date=departure_date, price=round(price_usd * USD_TO_EUR, 2),
+            currency="EUR", airline=get("name", get("airline", "Unknown airline")),
             departure_time=get("departure", get("departure_time")), arrival_time=get("arrival", get("arrival_time")),
             duration=get("duration"), stops=get("stops"))
 
@@ -49,7 +51,8 @@ class FlightSearchService:
         key = (request.origin, request.destination, request.departure_date.isoformat(), request.flex_days, request.passengers)
         with self.lock:
             cached = self.cache.get(key)
-            if cached and cached.expires_at > datetime.now(timezone.utc): return "cache", cached.itineraries, None
+            if cached and cached.expires_at > datetime.now(timezone.utc):
+                return self._apply_budget("cache", cached.itineraries, request)
             self.cache.pop(key, None)
         dates = [request.departure_date + timedelta(days=i) for i in range(request.flex_days + 1)]
         flights = []
@@ -59,12 +62,27 @@ class FlightSearchService:
                 try: flights.extend(future.result())
                 except FlightSourceError: pass
         if not flights:
-            return "demo_fallback", self._demo_results(request), "Live Google Flights data was unavailable; showing demo results."
+            return self._apply_budget("demo_fallback", self._demo_results(request), request, "Live Google Flights data was unavailable; showing demo results.")
         flights.sort(key=lambda item: (item.price, item.departure_date))
         with self.lock: self.cache[key] = CacheEntry(datetime.now(timezone.utc) + timedelta(seconds=self.ttl_seconds), flights)
-        return "live", flights, None
+        return self._apply_budget("live", flights, request)
+
+    @staticmethod
+    def _apply_budget(source, itineraries, request, message=None):
+        if request.max_budget_eur is None:
+            return source, itineraries, message, "not_applied"
+        matches = [itinerary for itinerary in itineraries if itinerary.price <= request.max_budget_eur]
+        if matches:
+            return source, matches, message, "matched"
+        cheapest = min(itineraries, key=lambda itinerary: itinerary.price)
+        budget_message = f"No itineraries meet the €{request.max_budget_eur:.2f} budget; showing the cheapest option at €{cheapest.price:.2f}."
+        return source, [cheapest], FlightSearchService._combine_messages(message, budget_message), "exceeded"
+
+    @staticmethod
+    def _combine_messages(*messages):
+        return " ".join(message for message in messages if message) or None
 
     @staticmethod
     def _demo_results(request):
         d = request.departure_date
-        return [FlightItinerary(departure_date=d, price=149.0, airline="Sky Scout Demo Air", departure_time="08:10", arrival_time="10:35", duration="2h 25m", stops=0), FlightItinerary(departure_date=d, price=184.0, airline="Sky Scout Demo Connect", departure_time="13:40", arrival_time="17:05", duration="3h 25m", stops=1)]
+        return [FlightItinerary(departure_date=d, price=round(149.0 * USD_TO_EUR, 2), currency="EUR", airline="Sky Scout Demo Air", departure_time="08:10", arrival_time="10:35", duration="2h 25m", stops=0), FlightItinerary(departure_date=d, price=round(184.0 * USD_TO_EUR, 2), currency="EUR", airline="Sky Scout Demo Connect", departure_time="13:40", arrival_time="17:05", duration="3h 25m", stops=1)]
